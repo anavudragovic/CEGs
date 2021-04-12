@@ -49,21 +49,22 @@ for imfile, file in enumerate(glob.glob(mags)):
 
 
 
-#rand = lambda: random.randint(0, 255)
 fig = plt.figure(figsize=(10,7.5))
-colors = cm.rainbow(np.linspace(0, 1, len(mag)))
-llim = -12
-hlim = 0
+#viridis = cm.get_cmap('viridis', 256)
+#colors = viridis(np.linspace(0, 1, 12))
+colors=cm.rainbow(np.linspace(0, 1, len(mag)))
+llim = -5 #-12
+hlim = -1
 
 i=0
 for x, y, yerr, c in zip(sma, mag, mag_err, colors):
     #print(len(x),len(y))
     plt.ylim(llim,hlim)
-    plt.xlim(0,200)
-    plt.plot(x, y,color=c,alpha=0.9,label=names[i].replace('_ngc12710-2','').replace('mag_','').replace('.txt',''))
+    plt.xlim(80,150)
+    plt.plot(x, y,color=c,alpha=0.9,label=names[i].replace('_ngc12710-2','').replace('mag_','').replace('.txt',''),ls='-' if (i%2==0) else '--')
     plt.xlabel('sma [pix]')
     plt.ylabel('$\mu$')
     plt.gca().invert_yaxis()
     plt.legend(loc='upper right')
     i+=1
-plt.savefig('RP.png')    
+plt.savefig('RP_zoom.png')    
