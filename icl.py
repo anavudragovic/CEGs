@@ -108,26 +108,6 @@ print(mesh_size," : ",np.mean(bkg.background*~bkgmask),np.std(bkg.background*~bk
 #im=plt.imshow(mask,cmap='Greys_r',origin="lower")
 #plt.colorbar(im)
 
-y, x = np.mgrid[:data.shape[0], :data.shape[1]]
-# Fit the data using astropy.modeling
-p_init = models.Polynomial2D(degree=2)
-fit_p = fitting.LevMarLSQFitter()
-p = fit_p(p_init, x, y, ma.masked_where(mask > 0, data))
-
-# Plot the data with the best-fit model
-plt.figure(figsize=(8, 2.5))
-plt.subplot(1, 3, 1)
-plt.imshow(data, origin='lower', interpolation='nearest', vmin=-1e4, vmax=5e4)
-plt.title("Data")
-plt.subplot(1, 3, 2)
-plt.imshow(p(x, y), origin='lower', interpolation='nearest', vmin=-1e4,
-           vmax=5e4)
-plt.title("Model")
-plt.subplot(1, 3, 3)
-plt.imshow(data - p(x, y), origin='lower', interpolation='nearest', vmin=-1e4,
-           vmax=5e4)
-plt.title("Residual")
-
 # 
 #import imexam
 #ds9=imexam.connect(target="",path="/Applications/SAOImageDS9.app/Contents/MacOS/ds9",viewer="ds9",wait_time=10)
