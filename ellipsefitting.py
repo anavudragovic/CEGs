@@ -52,7 +52,8 @@ from photutils.morphology import data_properties
 from photutils.datasets import make_4gaussians_image
 from copy import deepcopy
 import scipy as sp
-#import scipy.optimize as optimize
+import scipy.optimize as optimize
+import numpy.ma as ma
 
 def angles_in_ellipse(num, a, b):
     #assert num > 0,'N>0'
@@ -71,10 +72,11 @@ def angles_in_ellipse(num, a, b):
 
 
 path = "/Users/anavudragovic/vidojevica/compact_ellipticals_at_Milankovic"
-imfile = "ngc12710-2.fits"
+#imfile = "iclsub100_ngc12710-2.fits"
+imfile = "iclsub100_ngc12710-2.fits"
 segfile = "ngc12710-2.seg.fits"
 os.chdir(path)
-label='_bkg1p'
+label=''
 base=os.path.basename(imfile)
 out=os.path.splitext(base)[0]
 galimg = fits.open(imfile)
@@ -103,8 +105,8 @@ seg[seg!=num] = 0
 segmap = np.nan_to_num(msk)
 #segmap[segmap > 0.0]=100
 segmap[segmap <= 0.0] = 0
-segmap_gauss=gaussian_filter(segmap,sigma=5)
-
+#segmap_gauss=gaussian_filter(segmap,sigma=5)
+segmap_gauss = segmap
 
 # Find celestial coordinates in the image (in pixels)
 position = skycoord_to_pixel(center, wcs)
@@ -121,9 +123,12 @@ msk_cutout = Cutout2D(segmap_gauss, position, size, wcs=segwcs)
 seg_cutout = Cutout2D(seg, position, size, wcs=segwcs)
 box_cutout = Cutout2D(box, position, size, wcs=segwcs)
 box_cutout.data[box_cutout.data>0]=1
+box_cutout.data[gal_cutout.data<0]=1
 data = gal_cutout.data
 segmask = seg_cutout.data
 mask = msk_cutout.data
+#mask[data<0]=np.max(mask)+100
+#data[data<0]=np.nan
 norm_gal = simple_norm(data, 'sqrt', percent=99.)
 norm_msk = simple_norm(mask, 'sqrt', percent=99.)
 plt.figure(figsize=(8, 8))
@@ -133,7 +138,8 @@ plt.title("Image: "+str(os.path.basename(imfile)))
 plt.imshow(data, norm=norm_gal, origin="lower")
 plt.subplot(2, 2, 2)
 plt.title("Mask: "+str(os.path.basename(segfile)))
-plt.imshow(mask, norm=norm_msk, origin="lower")
+imm=plt.imshow(mask, norm=norm_msk, origin="lower")
+#plt.colorbar(imm)
 
 # Target galaxy is the only object in segmask*data image
 # It's basic geom properties are measured with data_properties
@@ -158,10 +164,12 @@ aperture = EllipticalAperture(positioncen, a, b, theta=theta)
 # Ellipse major axis for bkg is eq to 3 * major axis of the object 
 # It's best to be taken as ~ 1.2 R from RC3 catalog and not simply 3*major_axis
 # background = mean +/- stdev
-nn = 3
+# RC3: R_25 ~ 234 arcsec
+Rc=234
+nn = Rc/a
 nna = nn*a
 nnb = nn*b 
-phi = angles_in_ellipse(20, nna, nnb)
+phi = angles_in_ellipse(40, nna, nnb)
 #print(np.round(np.rad2deg(phi), 2))
 
 e = (1.0 - nnb ** 2.0 / nna ** 2.0) ** 0.5
@@ -169,35 +177,34 @@ arcs = sp.special.ellipeinc(phi, e)
 #print(np.round(np.diff(arcs), 4))
 x = cat.xcentroid + nnb * np.sin(phi)
 y = cat.ycentroid + nna * np.cos(phi)
-box = RectangularAperture(zip(x,y), 10, 10)
+box = RectangularAperture(zip(x,y), 32, 32)
 boolmask = box_cutout.data > 0
 phot = aperture_photometry(data, box, mask=boolmask)
 bkg_mean = np.mean(phot['aperture_sum'] / box.area) # 14.985152614520166
 bkg_rms = np.std(phot['aperture_sum'] / box.area) # 4.568966255984001
 plt.figure(figsize=(8, 8))
-im=plt.imshow(data*boolmask, cmap='viridis',interpolation='nearest',norm=norm_gal)
+norm = simple_norm(data*~boolmask, 'sqrt', percent=99.)
+im=plt.imshow(data*~boolmask, cmap='viridis',interpolation='nearest',norm=norm)
 plt.colorbar(im)
 aperture.plot(color='#d62728')
 box.plot(color='#d62728')
-
-data = data - (bkg_mean + bkg_rms) 
+print(bkg_mean,bkg_rms,bkg_mean - 1*bkg_rms,bkg_mean + 1*bkg_rms,bkg_mean - 3*bkg_rms,bkg_mean + 3*bkg_rms)
+#data = data - (bkg_mean+3*bkg_rms)#(bkg_mean - 1*bkg_rms) 
 ### np.median(data[box_cutout.data==0]) # == 15.167292
 ### np.std(data[box_cutout.data==0]) #== 10.078673
 # ----------------------------------------------------------------------------
-
+#datamask = deepcopy(data)
+#datamask[mask>0]=0
 
 geometry = EllipseGeometry(x0=cat.xcentroid, y0=cat.ycentroid, sma=a, eps=1-b/a,
                             pa=(theta+90)*np.pi/180.)
 
-aper = EllipticalAperture((geometry.x0, geometry.y0), geometry.sma,
-                            geometry.sma*(1 - geometry.eps),
-                            geometry.pa)
 
-
-
-ellipse = Ellipse(data, geometry)
-isolist = ellipse.fit_image(integrmode='median', step=10, linear=True, 
-                                  maxsma=nsize/2, fflag=0.3, sclip=3.0, nclip=3)
+ellipse = Ellipse(ma.masked_where(mask > 0, data), geometry)
+#isolist = ellipse.fit_image(integrmode='median', step=5, linear=True, 
+#                                  maxsma=nsize/2, fflag=0.3, sclip=3, nclip=3)
+isolist = ellipse.fit_image(integrmode='median', step=.1, linear=False, 
+                                  maxsma=nsize/2, fflag=0.3, sclip=3, nclip=3)
 
 
 # Try to fit further more (from the last ellipse) with larger step to increase S/N
@@ -216,7 +223,7 @@ model_image = build_ellipse_model(data.shape, isolist_wide)
 residual = data - model_image
 
 flux_err = np.sqrt(isolist_wide.intens + isolist_wide.pix_stddev**2)
-mag_err = 1.0857 * flux_err / isolist_wide.intens
+mag_err = 1.0857 * isolist_wide.int_err / isolist_wide.intens
 mag = -2.5*np.log10(isolist_wide.intens)
 
 # ----------------------------------------------------------------------------
@@ -227,7 +234,7 @@ t.add_column(mag, name='mag')
 t.add_column(mag_err, name='mag_err')
 t.write('mag_'+out+label+'.txt', format='ascii', overwrite=True)
 # ----------------------------------------------------------------------------
-#                  ***      P L O T S      ***
+#                  ***        P L O T    R E S U L T S      ***
 # ----------------------------------------------------------------------------
 # Plot ellipses over galaxy image; add bmodel and residual image
 plt.figure(figsize=(8, 8))
@@ -269,35 +276,47 @@ plt.savefig('isophotes_'+out+label+'.png')
 plt.figure(figsize=(8, 8))
 plt.subplots_adjust(hspace=0.35, wspace=0.35)
 
+llim = np.nanmin(isolist.eps) - np.nanstd(isolist.eps)/2
+hlim = np.nanmax(isolist.eps) + np.nanstd(isolist.eps)/2
 plt.subplot(2, 2, 1)
+plt.ylim(llim,hlim)
 plt.errorbar(isolist.sma, isolist.eps, yerr=isolist.ellip_err,
-             fmt='o', markersize=4)
+             fmt='o',  mfc='white',mec='k',ecolor='k',alpha=0.7)
 plt.xlabel('Semimajor Axis Length (pix)')
 plt.ylabel('Ellipticity')
 
+llim = np.nanmin(isolist.pa/np.pi*180.) - np.nanstd(isolist.pa/np.pi*180.)/2
+hlim = np.nanmax(isolist.pa/np.pi*180.) + np.nanstd(isolist.pa/np.pi*180.)/2
 plt.subplot(2, 2, 2)
+plt.ylim(llim,hlim)
 plt.errorbar(isolist.sma, isolist.pa/np.pi*180.,
-             yerr=isolist.pa_err/np.pi* 80., fmt='o', markersize=4)
+             yerr=isolist.pa_err/np.pi* 80., fmt='o', mfc='white',mec='k',ecolor='k',alpha=0.7)
 plt.xlabel('Semimajor Axis Length (pix)')
 plt.ylabel('PA (deg)')
 
+llim = np.nanmin(isolist.x0) - np.nanstd(isolist.x0)/2
+hlim = np.nanmax(isolist.x0) + np.nanstd(isolist.x0)/2
 plt.subplot(2, 2, 3)
-plt.errorbar(isolist.sma, isolist.x0, yerr=isolist.x0_err, fmt='o',
-             markersize=4)
+plt.ylim(llim,hlim)
+plt.errorbar(isolist.sma, isolist.x0, yerr=isolist.x0_err, fmt='o', mfc='white',mec='k',ecolor='k',alpha=0.7)
 plt.xlabel('Semimajor Axis Length (pix)')
 plt.ylabel('x0')
 
+llim = np.nanmin(isolist.y0) - np.nanstd(isolist.y0)/2
+hlim = np.nanmax(isolist.y0) + np.nanstd(isolist.y0)/2
 plt.subplot(2, 2, 4)
-plt.errorbar(isolist.sma, isolist.y0, yerr=isolist.y0_err, fmt='o',
-             markersize=4)
+plt.ylim(llim,hlim)
+plt.errorbar(isolist.sma, isolist.y0, yerr=isolist.y0_err, fmt='o', mfc='white',mec='k',ecolor='k',alpha=0.7)
 plt.xlabel('Semimajor Axis Length (pix)')
 plt.ylabel('y0')
 plt.savefig('geompar_'+out+label+'.png')
 
 # Plot higher harmonics 
 plt.figure(figsize=(10, 5))
-llim = np.min(isolist_wide.a3[:-2]) - np.std(isolist_wide.a3)
-hlim = np.max(isolist_wide.a3[:-2]) + np.std(isolist_wide.a3)
+#llim = np.min(isolist_wide.a3[:-2]) - np.std(isolist_wide.a3)
+#hlim = np.max(isolist_wide.a3[:-2]) + np.std(isolist_wide.a3)
+llim=-0.1
+hlim=0.1
 plt.subplot(221)
 plt.ylim(llim,hlim)
 plt.errorbar(isolist_wide.sma, isolist_wide.a3, yerr=isolist_wide.a3_err, fmt='o', mfc='white',mec='k',ecolor='k',alpha=0.7)
@@ -306,8 +325,10 @@ plt.xlabel('Semimajor axis length')
 plt.ylabel('A3')
 
 plt.subplot(222)
-llim = np.min(isolist_wide.b3[:-2]) - np.std(isolist_wide.b3)
-hlim = np.max(isolist_wide.b3[:-2]) + np.std(isolist_wide.b3)
+#llim = np.min(isolist_wide.b3[:-2]) - np.std(isolist_wide.b3)
+#hlim = np.max(isolist_wide.b3[:-2]) + np.std(isolist_wide.b3)
+llim=-0.1
+hlim=0.1
 plt.ylim(llim,hlim)
 plt.errorbar(isolist_wide.sma, isolist_wide.b3, yerr=isolist_wide.b3_err, fmt='o', mfc='white',mec='k',ecolor='k',alpha=0.7)
 plt.axhline(0,ls='--',color='k')
@@ -315,8 +336,10 @@ plt.xlabel('Semimajor axis length')
 plt.ylabel('B3')
 
 plt.subplot(223)
-llim = np.min(isolist_wide.a4) - np.std(isolist_wide.a4)
-hlim = np.max(isolist_wide.a4) + np.std(isolist_wide.a4)
+#llim = np.min(isolist_wide.a4) - np.std(isolist_wide.a4)
+#hlim = np.max(isolist_wide.a4) + np.std(isolist_wide.a4)
+llim=-0.1
+hlim=0.1
 plt.ylim(llim,hlim)
 plt.errorbar(isolist_wide.sma, isolist_wide.a4, yerr=isolist_wide.a4_err, fmt='o', mfc='white',mec='k',ecolor='k',alpha=0.7)
 plt.axhline(0,ls='--',color='k')
@@ -324,8 +347,10 @@ plt.xlabel('Semimajor axis length')
 plt.ylabel('A4')
 
 plt.subplot(224)
-llim = np.min(isolist_wide.b4[:-2]) - np.std(isolist_wide.b4)
-hlim = np.max(isolist_wide.b4[:-2]) + np.std(isolist_wide.b4)
+#llim = np.min(isolist_wide.b4[:-2]) - np.std(isolist_wide.b4)
+#hlim = np.max(isolist_wide.b4[:-2]) + np.std(isolist_wide.b4)
+llim=-0.1
+hlim=0.1
 plt.ylim(llim,hlim)
 plt.errorbar(isolist_wide.sma, isolist_wide.b4, fmt='o', yerr=isolist_wide.b4_err, mfc='white',mec='k',ecolor='k',alpha=0.7)
 plt.axhline(0,ls='--',color='k')
