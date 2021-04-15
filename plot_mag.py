@@ -20,13 +20,14 @@ import re
 
 path = "/Users/anavudragovic/vidojevica/compact_ellipticals_at_Milankovic"
 os.chdir(path)
-mags='mag_*ngc12710-2*.txt'
-nfiles = len(glob.glob(mags))
+mags='mag_iclsub*_ngc12710-2.txt'
+bkgs='mag_ngc12710-2_b*.txt'
+nfiles = len(glob.glob(mags)+glob.glob(bkgs))
 
 names = []
 numlines = []
 i=0
-for fn in glob.glob(mags):
+for fn in glob.glob(mags)+glob.glob(bkgs):
     with open(fn) as f:
         names=np.append(names, fn)
         #names[i]=[sum(1 for line in f if line.strip() and not line.startswith('#'))  ]  
@@ -39,7 +40,7 @@ sma = [[0. for i in range(cols)] for j in range(rows)]
 mag = [[0. for i in range(cols)] for j in range(rows)]
 mag_err = [[0. for i in range(cols)] for j in range(rows)]
 i=0
-for imfile, file in enumerate(glob.glob(mags)):
+for imfile, file in enumerate(glob.glob(mags)+glob.glob(bkgs)):
     print(file)
     ellip = np.genfromtxt(file, names="sma,mag,mag_err",usecols=(0,-2,-1),delimiter=" ",skip_header=1)
     sma[i] = ellip['sma']
@@ -53,14 +54,14 @@ fig = plt.figure(figsize=(10,7.5))
 #viridis = cm.get_cmap('viridis', 256)
 #colors = viridis(np.linspace(0, 1, 12))
 colors=cm.rainbow(np.linspace(0, 1, len(mag)))
-llim = -5 #-12
-hlim = -1
+llim = -7.2 #-12
+hlim = -2.
 
 i=0
 for x, y, yerr, c in zip(sma, mag, mag_err, colors):
     #print(len(x),len(y))
     plt.ylim(llim,hlim)
-    plt.xlim(80,150)
+    plt.xlim(40,150)
     plt.plot(x, y,color=c,alpha=0.9,label=names[i].replace('_ngc12710-2','').replace('mag_','').replace('.txt',''),ls='-' if (i%2==0) else '--')
     plt.xlabel('sma [pix]')
     plt.ylabel('$\mu$')
